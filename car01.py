@@ -381,25 +381,116 @@ class CarPricePredictor:
             return None
 
     def train_from_csv(self, df):
-        """Train model from CSV data"""
+        """Train model from CSV data with flexible column mapping"""
         try:
             st.info("🔄 Training model from CSV data...")
             
-            # Identify required columns
+            # Show available columns in the uploaded CSV
+            st.write("📋 Columns found in your CSV:")
+            st.write(list(df.columns))
+            
+            # Flexible column mapping for different CSV formats
+            column_mapping = {
+                'brand': 'Brand',
+                'car_brand': 'Brand',
+                'model': 'Model', 
+                'car_model': 'Model',
+                'year': 'Year',
+                'manufacture_year': 'Year',
+                'car_year': 'Year',
+                'fuel': 'Fuel_Type',
+                'fuel_type': 'Fuel_Type',
+                'fueltype': 'Fuel_Type',
+                'transmission': 'Transmission',
+                'mileage': 'Mileage',
+                'km_driven': 'Mileage',
+                'kmdriven': 'Mileage',
+                'engine': 'Engine_cc',
+                'engine_cc': 'Engine_cc',
+                'engine_capacity': 'Engine_cc',
+                'engine_cap': 'Engine_cc',
+                'power': 'Power_HP',
+                'power_hp': 'Power_HP',
+                'horsepower': 'Power_HP',
+                'hp': 'Power_HP',
+                'condition': 'Condition',
+                'car_condition': 'Condition',
+                'price': 'Price',
+                'selling_price': 'Price',
+                'car_price': 'Price',
+                'exshowroom_price': 'Price',
+                'price_inr': 'Price',
+                'price_inr': 'Price',
+                'price_inr': 'Price'  # This will handle Price_INR
+            }
+            
+            # Create a copy to avoid modifying original
+            df_processed = df.copy()
+            
+            # Rename columns if they exist with alternative names
+            columns_renamed = False
+            for old_col, new_col in column_mapping.items():
+                if old_col.lower() in [col.lower() for col in df_processed.columns]:
+                    # Find the actual column name (case insensitive)
+                    actual_col = [col for col in df_processed.columns if col.lower() == old_col.lower()][0]
+                    if new_col not in df_processed.columns:
+                        df_processed[new_col] = df_processed[actual_col]
+                        st.success(f"✅ Mapped '{actual_col}' → '{new_col}'")
+                        columns_renamed = True
+            
+            # Special handling for Price_INR
+            if 'Price_INR' in df_processed.columns and 'Price' not in df_processed.columns:
+                df_processed['Price'] = df_processed['Price_INR']
+                st.success("✅ Mapped 'Price_INR' → 'Price'")
+                columns_renamed = True
+            
+            if columns_renamed:
+                st.write("📋 Updated columns after mapping:")
+                st.write(list(df_processed.columns))
+            
+            # Required columns
             required_columns = ['Brand', 'Model', 'Year', 'Fuel_Type', 'Transmission', 
-                              'Mileage', 'Engine_cc', 'Power_HP', 'Condition', 'Price_INR']
+                              'Mileage', 'Engine_cc', 'Power_HP', 'Condition', 'Price']
             
             # Check if required columns exist
-            missing_columns = [col for col in required_columns if col not in df.columns]
+            missing_columns = [col for col in required_columns if col not in df_processed.columns]
             if missing_columns:
                 st.error(f"Missing required columns: {missing_columns}")
+                
+                # Show helpful information
+                st.info("""
+                **📋 Required Column Format:**
+                
+                | Brand | Model | Year | Fuel_Type | Transmission | Mileage | Engine_cc | Power_HP | Condition | Price |
+                |-------|-------|------|-----------|--------------|---------|-----------|----------|-----------|-------|
+                | Maruti Suzuki | Swift | 2020 | Petrol | Manual | 25000 | 1197 | 90 | Very Good | 450000 |
+                
+                **🔄 Alternative Column Names Accepted:**
+                - **Brand:** brand, car_brand
+                - **Model:** model, car_model  
+                - **Year:** year, manufacture_year, car_year
+                - **Fuel_Type:** fuel, fuel_type, fueltype
+                - **Transmission:** transmission
+                - **Mileage:** mileage, km_driven, kmdriven
+                - **Engine_cc:** engine, engine_cc, engine_capacity, engine_cap
+                - **Power_HP:** power, power_hp, horsepower, hp
+                - **Condition:** condition, car_condition
+                - **Price:** price, selling_price, car_price, exshowroom_price, price_inr, Price_INR
+                """)
+                
+                # Show sample of current data
+                with st.expander("View Your CSV Data Sample"):
+                    st.dataframe(df.head())
+                
                 return False
             
             # Clean data
-            df_clean = df.dropna()
+            df_clean = df_processed.dropna()
             if len(df_clean) < 10:
                 st.error("Not enough data after cleaning. Need at least 10 records.")
                 return False
+            
+            st.success(f"✅ Data validated! Using {len(df_clean)} records for training.")
             
             # Prepare features
             features = ['Brand', 'Model', 'Year', 'Fuel_Type', 'Transmission',
@@ -408,11 +499,20 @@ class CarPricePredictor:
             X = df_clean[features]
             y = df_clean['Price']
             
+            # Show data summary
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Training Records", len(X))
+            with col2:
+                st.metric("Price Range", f"₹{y.min():,} - ₹{y.max():,}")
+            with col3:
+                st.metric("Average Price", f"₹{y.mean():,.0f}")
+            
             # Encode categorical variables
             categorical_features = ['Brand', 'Model', 'Fuel_Type', 'Transmission', 'Condition']
             for feature in categorical_features:
                 self.encoders[feature] = LabelEncoder()
-                X[feature] = self.encoders[feature].fit_transform(X[feature])
+                X[feature] = self.encoders[feature].fit_transform(X[feature].astype(str))
             
             # Scale numerical features
             numerical_features = ['Year', 'Mileage', 'Engine_cc', 'Power_HP']
@@ -437,11 +537,22 @@ class CarPricePredictor:
             y_pred = self.model.predict(X)
             r2 = r2_score(y, y_pred)
             mae = mean_absolute_error(y, y_pred)
+            rmse = np.sqrt(mean_squared_error(y, y_pred))
             
-            st.success(f"✅ Model trained from CSV! R²: {r2:.3f}, MAE: ₹{mae:,.0f}")
+            st.success(f"✅ Model trained successfully!")
+            
+            # Show performance metrics
+            st.subheader("📊 Model Performance")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("R² Score", f"{r2:.3f}")
+            with col2:
+                st.metric("MAE", f"₹{mae:,.0f}")
+            with col3:
+                st.metric("RMSE", f"₹{rmse:,.0f}")
             
             # Show feature importance
-            st.subheader("📈 Feature Importance from CSV Data")
+            st.subheader("📈 Feature Importance")
             importance_df = pd.DataFrame({
                 'Feature': list(self.feature_importance.keys()),
                 'Importance': list(self.feature_importance.values())
@@ -680,7 +791,7 @@ def show_csv_upload_interface():
     
     st.info("""
     **Upload a CSV file with car data to train the AI model.**
-    Required columns: Brand, Model, Year, Fuel_Type, Transmission, Mileage, Engine_cc, Power_HP, Condition, Price_INR
+    The system automatically recognizes different column names including Price_INR.
     """)
     
     uploaded_file = st.file_uploader("Choose CSV file", type=['csv'])
@@ -837,6 +948,7 @@ def generate_sample_csv():
     st.info("""
     **Download this sample CSV file to understand the required format.**
     You can then modify it with your own car data and upload for training.
+    The system automatically recognizes different column names including Price_INR.
     """)
     
     # Create sample data
@@ -850,7 +962,7 @@ def generate_sample_csv():
         'Engine_cc': [1197, 1197, 1199, 2179, 2393, 1498, 1353, 999],
         'Power_HP': [90, 83, 120, 140, 150, 121, 115, 110],
         'Condition': ['Very Good', 'Good', 'Excellent', 'Good', 'Very Good', 'Excellent', 'Very Good', 'Good'],
-        'Price': [450000, 350000, 650000, 700000, 1400000, 650000, 850000, 500000]
+        'Price_INR': [450000, 350000, 650000, 700000, 1400000, 650000, 850000, 500000]
     }
     
     sample_df = pd.DataFrame(sample_data)
@@ -999,5 +1111,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
