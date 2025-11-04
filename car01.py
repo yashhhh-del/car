@@ -387,7 +387,7 @@ class CarPricePredictor:
             
             # Identify required columns
             required_columns = ['Brand', 'Model', 'Year', 'Fuel_Type', 'Transmission', 
-                              'Mileage', 'Engine_cc', 'Power_HP', 'Condition', 'Price']
+                              'Mileage', 'Engine_cc', 'Power_HP', 'Condition', 'Price_INR']
             
             # Check if required columns exist
             missing_columns = [col for col in required_columns if col not in df.columns]
@@ -999,4 +999,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
