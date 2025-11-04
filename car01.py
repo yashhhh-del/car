@@ -680,7 +680,7 @@ def show_csv_upload_interface():
     
     st.info("""
     **Upload a CSV file with car data to train the AI model.**
-    Required columns: Brand, Model, Year, Fuel_Type, Transmission, Mileage, Engine_cc, Power_HP, Condition, Price
+    Required columns: Brand, Model, Year, Fuel_Type, Transmission, Mileage, Engine_cc, Power_HP, Condition, Price_INR
     """)
     
     uploaded_file = st.file_uploader("Choose CSV file", type=['csv'])
@@ -999,3 +999,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
