@@ -389,6 +389,14 @@ class CarPricePredictor:
             st.write("📋 Columns found in your CSV:")
             st.write(list(df.columns))
             
+            # Create a copy to avoid modifying original
+            df_processed = df.copy()
+            
+            # FIRST: Handle Price_INR specifically
+            if 'Price_INR' in df_processed.columns:
+                df_processed['Price'] = df_processed['Price_INR']
+                st.success("✅ Mapped 'Price_INR' → 'Price'")
+            
             # Flexible column mapping for different CSV formats
             column_mapping = {
                 'brand': 'Brand',
@@ -419,30 +427,19 @@ class CarPricePredictor:
                 'selling_price': 'Price',
                 'car_price': 'Price',
                 'exshowroom_price': 'Price',
-                'price_inr': 'Price',
-                'price_inr': 'Price',
-                'price_inr': 'Price'  # This will handle Price_INR
+                'price_inr': 'Price'
             }
-            
-            # Create a copy to avoid modifying original
-            df_processed = df.copy()
             
             # Rename columns if they exist with alternative names
             columns_renamed = False
             for old_col, new_col in column_mapping.items():
-                if old_col.lower() in [col.lower() for col in df_processed.columns]:
-                    # Find the actual column name (case insensitive)
-                    actual_col = [col for col in df_processed.columns if col.lower() == old_col.lower()][0]
-                    if new_col not in df_processed.columns:
-                        df_processed[new_col] = df_processed[actual_col]
-                        st.success(f"✅ Mapped '{actual_col}' → '{new_col}'")
-                        columns_renamed = True
-            
-            # Special handling for Price_INR
-            if 'Price_INR' in df_processed.columns and 'Price' not in df_processed.columns:
-                df_processed['Price'] = df_processed['Price_INR']
-                st.success("✅ Mapped 'Price_INR' → 'Price'")
-                columns_renamed = True
+                # Case insensitive matching
+                matching_cols = [col for col in df_processed.columns if str(col).lower() == old_col.lower()]
+                if matching_cols and new_col not in df_processed.columns:
+                    actual_col = matching_cols[0]
+                    df_processed[new_col] = df_processed[actual_col]
+                    st.success(f"✅ Mapped '{actual_col}' → '{new_col}'")
+                    columns_renamed = True
             
             if columns_renamed:
                 st.write("📋 Updated columns after mapping:")
@@ -457,13 +454,16 @@ class CarPricePredictor:
             if missing_columns:
                 st.error(f"Missing required columns: {missing_columns}")
                 
+                # Show what columns we have
+                st.info(f"Available columns in your CSV: {list(df_processed.columns)}")
+                
                 # Show helpful information
                 st.info("""
                 **📋 Required Column Format:**
                 
-                | Brand | Model | Year | Fuel_Type | Transmission | Mileage | Engine_cc | Power_HP | Condition | Price |
-                |-------|-------|------|-----------|--------------|---------|-----------|----------|-----------|-------|
-                | Maruti Suzuki | Swift | 2020 | Petrol | Manual | 25000 | 1197 | 90 | Very Good | 450000 |
+                Your CSV should have these columns (or similar names):
+                - **Brand, Model, Year, Fuel_Type, Transmission**
+                - **Mileage, Engine_cc, Power_HP, Condition, Price/Price_INR**
                 
                 **🔄 Alternative Column Names Accepted:**
                 - **Brand:** brand, car_brand
@@ -484,13 +484,19 @@ class CarPricePredictor:
                 
                 return False
             
-            # Clean data
+            # Clean data - remove rows with missing values
+            initial_count = len(df_processed)
             df_clean = df_processed.dropna()
-            if len(df_clean) < 10:
-                st.error("Not enough data after cleaning. Need at least 10 records.")
+            final_count = len(df_clean)
+            
+            if final_count < 10:
+                st.error(f"Not enough data after cleaning. Need at least 10 records, but only have {final_count}.")
                 return False
             
-            st.success(f"✅ Data validated! Using {len(df_clean)} records for training.")
+            if initial_count != final_count:
+                st.warning(f"Removed {initial_count - final_count} records with missing values")
+            
+            st.success(f"✅ Data validated! Using {final_count} records for training.")
             
             # Prepare features
             features = ['Brand', 'Model', 'Year', 'Fuel_Type', 'Transmission',
@@ -500,13 +506,16 @@ class CarPricePredictor:
             y = df_clean['Price']
             
             # Show data summary
-            col1, col2, col3 = st.columns(3)
+            st.subheader("📊 Training Data Summary")
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Training Records", len(X))
             with col2:
                 st.metric("Price Range", f"₹{y.min():,} - ₹{y.max():,}")
             with col3:
                 st.metric("Average Price", f"₹{y.mean():,.0f}")
+            with col4:
+                st.metric("Data Quality", f"{(final_count/initial_count)*100:.1f}%")
             
             # Encode categorical variables
             categorical_features = ['Brand', 'Model', 'Fuel_Type', 'Transmission', 'Condition']
@@ -562,10 +571,25 @@ class CarPricePredictor:
                         title='Feature Importance (Trained from CSV)')
             st.plotly_chart(fig, use_container_width=True)
             
+            # Show sample predictions vs actual
+            st.subheader("📋 Sample Predictions vs Actual")
+            sample_data = pd.DataFrame({
+                'Actual Price': y.head(10),
+                'Predicted Price': y_pred[:10],
+                'Difference': y.head(10) - y_pred[:10]
+            })
+            st.dataframe(sample_data.style.format({
+                'Actual Price': '₹{:,.0f}',
+                'Predicted Price': '₹{:,.0f}',
+                'Difference': '₹{:,.0f}'
+            }))
+            
             return True
             
         except Exception as e:
             st.error(f"Error training from CSV: {str(e)}")
+            import traceback
+            st.error(f"Detailed error: {traceback.format_exc()}")
             return False
 
     def predict_price(self, input_data):
@@ -1085,7 +1109,6 @@ def main():
         st.subheader("Model Status")
         if st.session_state.predictor.is_trained:
             st.success("✅ Model Trained")
-            # Safe check for training_data
             if hasattr(st.session_state.predictor, 'training_data') and st.session_state.predictor.training_data is not None:
                 st.info(f"📊 Trained on {st.session_state.predictor.training_records_count} records")
         else:
